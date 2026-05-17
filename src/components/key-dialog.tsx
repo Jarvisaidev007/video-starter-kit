@@ -13,55 +13,78 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 
 type KeyDialogProps = {} & Parameters<typeof Dialog>[0];
 
 export function KeyDialog({ onOpenChange, open, ...props }: KeyDialogProps) {
-  const [falKey, setFalKey] = useState("");
+  const [falKey, setFalKey] = useState(
+    () => (typeof localStorage !== "undefined" && localStorage.getItem("falKey")) || "",
+  );
+  const [elevenLabsKey, setElevenLabsKey] = useState(
+    () => (typeof localStorage !== "undefined" && localStorage.getItem("elevenLabsKey")) || "",
+  );
 
   const handleOnOpenChange = (isOpen: boolean) => {
     onOpenChange?.(isOpen);
   };
 
   const handleSave = () => {
-    localStorage.setItem("falKey", falKey);
+    if (falKey) localStorage.setItem("falKey", falKey);
+    if (elevenLabsKey) localStorage.setItem("elevenLabsKey", elevenLabsKey);
     handleOnOpenChange(false);
-    setFalKey("");
   };
 
   return (
     <Dialog {...props} onOpenChange={handleOnOpenChange} open={open}>
       <DialogContent className="flex flex-col max-w-lg h-fit">
         <DialogHeader>
-          <DialogTitle className="sr-only">Access Key</DialogTitle>
+          <DialogTitle>API Keys</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col flex-1 gap-8">
-          <h2 className="text-lg font-semibold flex flex-row gap-2">
-            Save your own FAL Key
-          </h2>
-          <div className="flex flex-col gap-4">
+        <div className="flex flex-col flex-1 gap-6">
+          <div className="flex flex-col gap-2">
+            <Label>fal.ai Key</Label>
             <Input
               placeholder="Your FAL Key"
+              type="password"
               value={falKey}
               onChange={(e) => setFalKey(e.target.value)}
             />
+            <p className="text-muted-foreground text-xs">
+              Get yours at{" "}
+              <a
+                className="underline underline-offset-2 text-foreground"
+                href="https://fal.ai/dashboard/keys"
+                target="_blank"
+              >
+                fal.ai/dashboard/keys
+              </a>
+              . Powers image, video, music, and voiceover generation.
+            </p>
           </div>
-          <div className="flex-1 flex flex-row items-end justify-center gap-2">
-            <Button onClick={handleSave}>Save</Button>
+          <div className="flex flex-col gap-2">
+            <Label>ElevenLabs Key <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              placeholder="Your ElevenLabs Key"
+              type="password"
+              value={elevenLabsKey}
+              onChange={(e) => setElevenLabsKey(e.target.value)}
+            />
+            <p className="text-muted-foreground text-xs">
+              Get yours at{" "}
+              <a
+                className="underline underline-offset-2 text-foreground"
+                href="https://elevenlabs.io/app/settings/api-keys"
+                target="_blank"
+              >
+                elevenlabs.io
+              </a>
+              . Enables ElevenLabs v3 voiceover.
+            </p>
           </div>
         </div>
-
         <DialogFooter>
-          <p className="text-muted-foreground text-sm mt-4 w-full text-center">
-            You can get your FAL Key from{" "}
-            <a
-              className="underline underline-offset-2 decoration-foreground/50 text-foreground"
-              href="https://fal.ai/dashboard/keys"
-            >
-              here
-            </a>
-            .
-          </p>
+          <Button onClick={handleSave} className="w-full">Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

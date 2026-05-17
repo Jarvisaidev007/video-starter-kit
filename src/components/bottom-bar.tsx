@@ -72,11 +72,8 @@ export default function BottomBar() {
 
   const handleOnDragOver: DragEventHandler<HTMLDivElement> = (event) => {
     event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
     setDragOverTracks(true);
-    const jobPayload = event.dataTransfer.getData("job");
-    if (!jobPayload) return false;
-    const job: MediaItem = JSON.parse(jobPayload);
-    return job.status === "completed";
   };
 
   const addToTrack = useMutation({

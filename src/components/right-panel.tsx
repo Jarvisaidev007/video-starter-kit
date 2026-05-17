@@ -9,7 +9,7 @@ import {
   useProjectId,
   useVideoProjectStore,
 } from "@/data/store";
-import { AVAILABLE_ENDPOINTS, type InputAsset } from "@/lib/fal";
+import { AVAILABLE_ENDPOINTS, type InputAsset, type ModelParam } from "@/lib/fal";
 import {
   ImageIcon,
   MicIcon,
@@ -164,11 +164,7 @@ export default function RightPanel({
 
     const initialInput = endpoint?.initialInput || {};
 
-    if (
-      (mediaType === "video" &&
-        endpoint?.endpointId === "fal-ai/hunyuan-video") ||
-      mediaType !== "video"
-    ) {
+    if (mediaType !== "video") {
       setGenerateData({ image: null, ...initialInput });
     } else {
       setGenerateData({ ...initialInput });
@@ -176,74 +172,50 @@ export default function RightPanel({
 
     setEndpointId(endpoint?.endpointId ?? AVAILABLE_ENDPOINTS[0].endpointId);
   };
-  // TODO improve model-specific parameters
-  type InputType = {
-    prompt: string;
-    image_url?: File | string | null;
-    video_url?: File | string | null;
-    audio_url?: File | string | null;
-    image_size?: { width: number; height: number } | string;
-    aspect_ratio?: string;
-    seconds_total?: number;
-    voice?: string;
-    input?: string;
-    reference_audio_url?: File | string | null;
-    images?: {
-      start_frame_num: number;
-      image_url: string | File;
-    }[];
-    advanced_camera_control?: {
-      movement_value: number;
-      movement_type: string;
+  // Build model param values from generateData (with defaults)
+  const paramValues = useMemo(() => {
+    const values: Record<string, any> = {};
+    for (const param of endpoint?.params ?? []) {
+      values[param.key] = generateData[param.key] ?? param.default;
+    }
+    return values;
+  }, [endpoint?.params, generateData]);
+
+  // Detect if an image-type asset is set (works for both "image" and custom keys like "start_image_url")
+  const hasImageRef = useMemo(() => {
+    return endpoint?.inputAsset?.some(
+      (a) => getAssetType(a) === "image" && !!generateData[getAssetKey(a)],
+    ) ?? false;
+  }, [endpoint?.inputAsset, generateData]);
+
+  const input = useMemo(() => {
+    const base: Record<string, any> = {
+      prompt: generateData.prompt,
     };
-  };
 
-  const aspectRatioMap = {
-    "16:9": { image: "landscape_16_9", video: "16:9" },
-    "9:16": { image: "portrait_16_9", video: "9:16" },
-    "1:1": { image: "square_1_1", video: "1:1" },
-  };
+    // Voice-specific
+    if (endpointId === "fal-ai/playht/tts/v3") {
+      base.voice = generateData.voice;
+      base.input = generateData.prompt;
+    }
 
-  let imageAspectRatio: string | { width: number; height: number } | undefined;
-  let videoAspectRatio: string | undefined;
+    // Copy all asset values from generateData using the correct keys
+    for (const asset of endpoint?.inputAsset ?? []) {
+      const key = getAssetKey(asset);
+      if (generateData[key]) {
+        base[key] = generateData[key];
+      }
+    }
 
-  if (project?.aspectRatio) {
-    imageAspectRatio = aspectRatioMap[project.aspectRatio].image;
-    videoAspectRatio = aspectRatioMap[project.aspectRatio].video;
-  }
+    if (generateData.advanced_camera_control)
+      base.advanced_camera_control = generateData.advanced_camera_control;
+    if (generateData.images) base.images = generateData.images;
 
-  const input: InputType = {
-    prompt: generateData.prompt,
-    image_url: undefined,
-    image_size: imageAspectRatio,
-    aspect_ratio: videoAspectRatio,
-    seconds_total: generateData.duration ?? undefined,
-    voice:
-      endpointId === "fal-ai/playht/tts/v3" ? generateData.voice : undefined,
-    input:
-      endpointId === "fal-ai/playht/tts/v3" ? generateData.prompt : undefined,
-  };
+    // Spread model-specific params
+    Object.assign(base, paramValues);
 
-  if (generateData.image) {
-    input.image_url = generateData.image;
-  }
-  if (generateData.video_url) {
-    input.video_url = generateData.video_url;
-  }
-  if (generateData.audio_url) {
-    input.audio_url = generateData.audio_url;
-  }
-  if (generateData.reference_audio_url) {
-    input.reference_audio_url = generateData.reference_audio_url;
-  }
-
-  if (generateData.advanced_camera_control) {
-    input.advanced_camera_control = generateData.advanced_camera_control;
-  }
-
-  if (generateData.images) {
-    input.images = generateData.images;
-  }
+    return base;
+  }, [generateData, endpointId, endpoint?.inputAsset, paramValues]);
 
   const extraInput =
     endpointId === "fal-ai/f5-tts"
@@ -256,22 +228,53 @@ export default function RightPanel({
           remove_silence: true,
         }
       : {};
-  const createJob = useJobCreator({
-    projectId,
-    endpointId:
-      generateData.image && mediaType === "video"
-        ? `${endpointId}/image-to-video`
-        : endpointId,
-    mediaType,
-    input: {
+
+  const resolvedEndpointId = useMemo(() => {
+    if (hasImageRef && mediaType === "video") {
+      return endpoint?.imageToVideoEndpointId ?? `${endpointId}/image-to-video`;
+    }
+    if (hasImageRef && mediaType === "image" && endpoint?.imageEditEndpointId) {
+      return endpoint.imageEditEndpointId;
+    }
+    return endpointId;
+  }, [hasImageRef, mediaType, endpoint, endpointId]);
+
+  const resolvedInput = useMemo(() => {
+    const mapped = mapInputKey(input, endpoint?.inputMap || {});
+    // GPT Image 2 edit expects image_urls array
+    if (
+      hasImageRef &&
+      mediaType === "image" &&
+      endpoint?.imageInputKey === "image_urls"
+    ) {
+      const { image_url, ...rest } = mapped;
+      const imgAsset = endpoint?.inputAsset?.find((a) => getAssetType(a) === "image");
+      const imgKey = imgAsset ? getAssetKey(imgAsset) : "image";
+      return {
+        ...(endpoint?.initialInput || {}),
+        ...rest,
+        image_urls: [generateData[imgKey]],
+        ...extraInput,
+      };
+    }
+    return {
       ...(endpoint?.initialInput || {}),
-      ...mapInputKey(input, endpoint?.inputMap || {}),
+      ...mapped,
       ...extraInput,
-    },
-  });
+    };
+  }, [input, endpoint, hasImageRef, mediaType, extraInput, generateData]);
+
+  const createJob = useJobCreator();
 
   const handleOnGenerate = async () => {
-    await createJob.mutateAsync({} as any, {
+    await createJob.mutateAsync(
+      {
+        projectId,
+        endpointId: resolvedEndpointId,
+        mediaType,
+        input: resolvedInput,
+      },
+      {
       onSuccess: async () => {
         if (!createJob.isError) {
           handleOnOpenChange(false);
@@ -384,7 +387,8 @@ export default function RightPanel({
         generateDialogOpen ? "right-0" : "-right-[450px]",
       )}
     >
-      <div className="flex-1 p-4 flex flex-col gap-4 border-b border-border h-full overflow-hidden relative">
+      <div className="flex-1 flex flex-col border-b border-border h-full overflow-hidden relative">
+        <div className="flex-1 p-4 flex flex-col gap-4 overflow-y-auto">
         <div className="flex flex-row items-center justify-between">
           <h2 className="text-sm text-muted-foreground font-semibold flex-1">
             Generate Media
@@ -450,16 +454,22 @@ export default function RightPanel({
             <ModelEndpointPicker
               mediaType={mediaType}
               value={endpointId}
-              onValueChange={(endpointId) => {
+              onValueChange={(newEndpointId) => {
+                const prev = {
+                  prompt: generateData.prompt,
+                  image: generateData.image,
+                  video_url: generateData.video_url,
+                  audio_url: generateData.audio_url,
+                };
                 resetGenerateData();
-                setEndpointId(endpointId);
+                setEndpointId(newEndpointId);
 
-                const endpoint = AVAILABLE_ENDPOINTS.find(
-                  (endpoint) => endpoint.endpointId === endpointId,
+                const ep = AVAILABLE_ENDPOINTS.find(
+                  (e) => e.endpointId === newEndpointId,
                 );
 
-                const initialInput = endpoint?.initialInput || {};
-                setGenerateData({ ...initialInput });
+                const initialInput = ep?.initialInput || {};
+                setGenerateData({ ...initialInput, ...prev });
               }}
             />
           </div>
@@ -528,26 +538,27 @@ export default function RightPanel({
                       </div>
                     )}
                     {generateData[getAssetKey(asset)] && (
-                      <div className="cursor-pointer overflow-hidden relative w-full flex flex-col items-center justify-center border border-dashed border-border rounded-md">
-                        <WithTooltip tooltip="Remove media">
-                          <button
-                            type="button"
-                            className="p-1 rounded hover:bg-black/50 absolute top-1 z-50 bg-black/80 right-1 group-hover:text-white"
-                            onClick={() =>
-                              setGenerateData({
-                                [getAssetKey(asset)]: undefined,
-                              })
-                            }
-                          >
-                            <TrashIcon className="w-3 h-3 stroke-2" />
-                          </button>
-                        </WithTooltip>
-                        {generateData[getAssetKey(asset)] && (
+                      <div className="flex items-center gap-2 w-full border border-dashed border-border rounded-md p-2">
+                        <div className="w-10 h-10 shrink-0 rounded overflow-hidden bg-accent">
                           <SelectedAssetPreview
                             asset={asset}
                             data={generateData}
                           />
-                        )}
+                        </div>
+                        <span className="text-xs text-muted-foreground truncate flex-1">
+                          {getAssetType(asset)} reference
+                        </span>
+                        <button
+                          type="button"
+                          className="p-1 rounded hover:bg-accent text-muted-foreground shrink-0"
+                          onClick={() =>
+                            setGenerateData({
+                              [getAssetKey(asset)]: undefined,
+                            })
+                          }
+                        >
+                          <TrashIcon className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     )}
                   </>
@@ -608,8 +619,7 @@ export default function RightPanel({
             </div>
           )}
         </div>
-        {tab === "generation" && (
-          <div className="flex flex-col gap-2 mb-2">
+        <div className="flex flex-col gap-2 mb-2">
             {endpoint?.imageForFrame && (
               <VideoFrameSelector
                 mediaItems={mediaItems}
@@ -636,49 +646,57 @@ export default function RightPanel({
                 }
               />
             )}
-            {mediaType === "music" && endpointId === "fal-ai/playht/tts/v3" && (
-              <div className="flex-1 flex flex-row gap-2">
-                {mediaType === "music" && (
-                  <div className="flex flex-row items-center gap-1">
-                    <Label>Duration</Label>
-                    <Input
-                      className="w-12 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      min={5}
-                      max={30}
-                      step={1}
-                      type="number"
-                      value={generateData.duration}
-                      onChange={(e) =>
-                        setGenerateData({
-                          duration: Number.parseInt(e.target.value),
-                        })
-                      }
-                    />
-                    <span>s</span>
-                  </div>
-                )}
-                {endpointId === "fal-ai/playht/tts/v3" && (
-                  <VoiceSelector
-                    value={generateData.voice}
-                    onValueChange={(voice) => {
-                      setGenerateData({ voice });
-                    }}
+            {/* Dynamic model params */}
+            {endpoint?.params && endpoint.params.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {endpoint.params.map((param) => (
+                  <ModelParamControl
+                    key={param.key}
+                    param={param}
+                    value={paramValues[param.key]}
+                    onChange={(val) => setGenerateData({ [param.key]: val })}
                   />
-                )}
+                ))}
               </div>
             )}
-            <div className="flex flex-row gap-2">
-              <Button
-                className="w-full"
-                disabled={enhance.isPending || createJob.isPending}
-                onClick={handleOnGenerate}
-              >
-                Generate
-              </Button>
-            </div>
+            {mediaType === "music" && (
+              <div className="flex flex-row items-center gap-1">
+                <Label>Duration</Label>
+                <Input
+                  className="w-12 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  min={5}
+                  max={30}
+                  step={1}
+                  type="number"
+                  value={generateData.duration}
+                  onChange={(e) =>
+                    setGenerateData({
+                      duration: Number.parseInt(e.target.value),
+                    })
+                  }
+                />
+                <span>s</span>
+              </div>
+            )}
+            {endpointId === "fal-ai/playht/tts/v3" && (
+              <VoiceSelector
+                value={generateData.voice}
+                onValueChange={(voice) => {
+                  setGenerateData({ voice });
+                }}
+              />
+            )}
           </div>
-        )}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background to-transparent via-background via-60% h-8 pointer-events-none" />
+        </div>
+        <div className="shrink-0 p-4 pt-2 border-t border-border">
+          <Button
+            className="w-full"
+            disabled={enhance.isPending || createJob.isPending}
+            onClick={handleOnGenerate}
+          >
+            Generate
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -716,20 +734,69 @@ const SelectedAssetPreview = ({
               : data[assetKey] || ""
           }
           controls={false}
+          className="w-full h-full object-cover"
           style={{ pointerEvents: "none" }}
         />
       )}
       {assetType === "image" && (
         <img
-          id="image-preview"
           src={
             data[assetKey] && typeof data[assetKey] !== "string"
               ? URL.createObjectURL(data[assetKey])
               : data[assetKey] || ""
           }
           alt="Media Preview"
+          className="w-full h-full object-cover"
         />
       )}
     </>
   );
 };
+
+function ModelParamControl({
+  param,
+  value,
+  onChange,
+}: {
+  param: ModelParam;
+  value: any;
+  onChange: (value: any) => void;
+}) {
+  if (param.type === "select" && param.options) {
+    return (
+      <div className="flex flex-col gap-1 min-w-[100px] flex-1">
+        <Label className="text-xs text-muted-foreground">{param.label}</Label>
+        <Select value={String(value)} onValueChange={onChange}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {param.options.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
+  if (param.type === "toggle") {
+    return (
+      <div className="flex flex-col gap-1 min-w-[100px] flex-1">
+        <Label className="text-xs text-muted-foreground">{param.label}</Label>
+        <Button
+          variant={value ? "default" : "outline"}
+          size="sm"
+          className="h-8 text-xs"
+          onClick={() => onChange(!value)}
+        >
+          {value ? "On" : "Off"}
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
+}
