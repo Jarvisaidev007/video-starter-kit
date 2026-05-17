@@ -19,10 +19,15 @@ type KeyDialogProps = {} & Parameters<typeof Dialog>[0];
 
 export function KeyDialog({ onOpenChange, open, ...props }: KeyDialogProps) {
   const [falKey, setFalKey] = useState(
-    () => (typeof localStorage !== "undefined" && localStorage.getItem("falKey")) || "",
+    () =>
+      (typeof localStorage !== "undefined" && localStorage.getItem("falKey")) ||
+      "",
   );
   const [elevenLabsKey, setElevenLabsKey] = useState(
-    () => (typeof localStorage !== "undefined" && localStorage.getItem("elevenLabsKey")) || "",
+    () =>
+      (typeof localStorage !== "undefined" &&
+        localStorage.getItem("elevenLabsKey")) ||
+      "",
   );
 
   const handleOnOpenChange = (isOpen: boolean) => {
@@ -63,7 +68,12 @@ export function KeyDialog({ onOpenChange, open, ...props }: KeyDialogProps) {
             </p>
           </div>
           <div className="flex flex-col gap-2">
-            <Label>ElevenLabs Key <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Label>
+              ElevenLabs Key{" "}
+              <span className="text-muted-foreground font-normal">
+                (optional)
+              </span>
+            </Label>
             <Input
               placeholder="Your ElevenLabs Key"
               type="password"
@@ -84,7 +94,9 @@ export function KeyDialog({ onOpenChange, open, ...props }: KeyDialogProps) {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} className="w-full">Save</Button>
+          <Button onClick={handleSave} className="w-full">
+            Save
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

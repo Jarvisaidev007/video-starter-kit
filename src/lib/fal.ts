@@ -3,7 +3,7 @@
 import { createFalClient } from "@fal-ai/client";
 
 export const fal = createFalClient({
-  credentials: () => localStorage?.getItem("falKey") as string,
+  credentials: () => localStorage?.getItem("falKey") || undefined,
   proxyUrl: "/api/fal",
 });
 
@@ -272,7 +272,12 @@ export const AVAILABLE_ENDPOINTS: ApiInfo[] = [
     category: "video",
     inputAsset: ["image"],
     imageToVideoEndpointId: "bytedance/seedance-2.0/image-to-video",
-    params: [aspectRatioSeedance, videoDurationSeedance, videoResolution3, generateAudio],
+    params: [
+      aspectRatioSeedance,
+      videoDurationSeedance,
+      videoResolution3,
+      generateAudio,
+    ],
   },
   {
     endpointId: "bytedance/seedance-2.0/fast/text-to-video",
@@ -283,7 +288,12 @@ export const AVAILABLE_ENDPOINTS: ApiInfo[] = [
     category: "video",
     inputAsset: ["image"],
     imageToVideoEndpointId: "bytedance/seedance-2.0/fast/image-to-video",
-    params: [aspectRatioSeedance, videoDurationSeedance, videoResolution3, generateAudio],
+    params: [
+      aspectRatioSeedance,
+      videoDurationSeedance,
+      videoResolution3,
+      generateAudio,
+    ],
   },
   {
     endpointId: "fal-ai/kling-video/v3/pro/text-to-video",
@@ -497,14 +507,16 @@ export const AVAILABLE_ENDPOINTS: ApiInfo[] = [
   {
     endpointId: "fal-ai/playai/tts/dialog",
     label: "PlayAI Text-to-Speech Dialog",
-    description:
-      "Generate natural-sounding multi-speaker dialogues.",
+    description: "Generate natural-sounding multi-speaker dialogues.",
     cost: "",
     category: "voiceover",
     inputMap: { prompt: "input" },
     initialInput: {
       voices: [
-        { voice: "Jennifer (English (US)/American)", turn_prefix: "Speaker 1: " },
+        {
+          voice: "Jennifer (English (US)/American)",
+          turn_prefix: "Speaker 1: ",
+        },
         { voice: "Furio (English (IT)/Italian)", turn_prefix: "Speaker 2: " },
       ],
     },
